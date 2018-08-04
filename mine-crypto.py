@@ -9,11 +9,13 @@ import threading
 import pickle
 
 
-class crypto_utils:
+class CryptoUtils:
+
+    def __init__(self):
+        pass
 
     @staticmethod
     def calculate_sha256(text):
-
         sha256 = hashlib.sha256()
         sha256.update(text)
         return sha256.hexdigest()
@@ -37,42 +39,24 @@ class crypto_utils:
 
 class Block:
 
-    def __init__(self, timestamp, nonce, transactions, prev_blockhash):
+    def __init__(self, timestamp, nonce, transactions, prev_block_hash):
 
         self.timestamp = timestamp
         self.nonce = nonce
         self.transactions = transactions
-        self.prev_blockHash = prev_blockhash
-        self.blockHash = None
-        self.calculateBlockHash()
+        self.prev_block_hash = prev_block_hash
+        self.block_hash = None
+        self.calculate_block_hash()
 
-    def get_time_stamp(self):
-        return self.timestamp
-
-    def set_time_stamp(self, timestamp):
-        self.timestamp = timestamp
-
-    def get_nonce(self):
-        return self.nonce
-
-    def set_nonce(self, nonce):
-        self.nonce = nonce
-
-    def get_prev_blockHash(self):
-        return self.prev_blockHash
-
-    def get_blockHash(self):
-        return self.blockHash
-
-    def calculateBlockHash(self):
-        tmp = str(self.nonce) + str(self.timestamp) + self.prev_blockHash
+    def calculate_block_hash(self):
+        tmp = str(self.nonce) + str(self.timestamp) + self.prev_block_hash
 
         for tx in self.transactions:
             tmp += tx.tx_id
 
-        self.blockHash = crypto_utils.calculate_sha256(tmp)
+        self.block_hash = CryptoUtils.calculate_sha256(tmp)
 
-    def verifyTxs(self):
+    def verify_txs(self):
         for tx in self.transactions:
             if not tx.verify_signature():
                 return False
@@ -80,14 +64,15 @@ class Block:
 
     def print_all(self):
         print("Timestamp: " + str(self.timestamp))
-        print("Nonce: "     + str(self.nonce))
+        print("Nonce: " + str(self.nonce))
+
         i = 0
         for tx in self.transactions:
             print("Transaction {}:".format(i))
             tx.print_all()
             i += 1
-        print("Previous block hash: "+ self.prev_blockHash)
-        print("Block hash: " + self.blockHash)
+        print("Previous block hash: " + self.prev_block_hash)
+        print("Block hash: " + self.block_hash)
 
 
 class Chain:
@@ -96,31 +81,29 @@ class Chain:
         self.blockchain = []
         self.difficulty = 5
 
-    def mineBlock(self, block):
-
-        while not block.get_blockHash().startswith('0'*5):
-            block.set_nonce(block.get_nonce()+1)
-            block.set_time_stamp(time.time())
-            block.calculateBlockHash()
+    def mine_block(self, block):
+        while not block.block_hash.startswith('0'*5):
+            block.nonce += 1
+            block.timestamp = time.time()
+            block.calculate_block_hash()
 
         self.blockchain.append(block)
 
     def get_last_block_hash(self):
-        return self.blockchain[-1].get_blockHash()
+        return self.blockchain[-1].block_hash
 
-    def isChainValid(self):
-
+    def is_chain_valid(self):
         for i in range(1, len(self.blockchain)):
             current_block = self.blockchain[i]
             prev_block = self.blockchain[i-1]
 
-            cur_block_hash = current_block.get_blockHash()
-            current_block.calculateBlockHash()
-            if not cur_block_hash == current_block.get_blockHash():
+            cur_block_hash = current_block.block_hash
+            current_block.calculate_block_hash()
+            if not cur_block_hash == current_block.block_hash:
                 return False
-            if not prev_block.get_blockHash() == current_block.get_prev_blockHash():
+            if not prev_block.block_hash == current_block.prev_block_hash:
                 return False
-            if not current_block.get_blockHash().startswith('0' * self.difficulty):
+            if not current_block.prev_block_hash.startswith('0' * self.difficulty):
                 return False
         return True
 
@@ -145,23 +128,23 @@ class Transaction(object):
         self.calculate_tx_id()
 
     def generate_signature(self, private_key):
-        self.signature = crypto_utils.apply_ecdsa(private_key, self.to_string())
+        self.signature = CryptoUtils.apply_ecdsa(private_key, self.to_string())
 
     def verify_signature(self):
-        return crypto_utils.verify_ecdsa_sig(self.sender, self.to_string(), self.signature)
+        return CryptoUtils.verify_ecdsa_sig(self.sender, self.to_string(), self.signature)
 
     def calculate_tx_id(self):
-        self.tx_id = crypto_utils.calculate_sha256(self.to_string())
+        self.tx_id = CryptoUtils.calculate_sha256(self.to_string())
 
     def to_string(self):
         return \
-            crypto_utils.get_string_from_key(self.sender) + crypto_utils.get_string_from_key(self.recipient) + \
+            CryptoUtils.get_string_from_key(self.sender) + CryptoUtils.get_string_from_key(self.recipient) + \
             str(self.value) + str(self.seq)
 
     def print_all(self):
         print("Transaction ID: "+ self.tx_id)
-        print("Sender: " + crypto_utils.get_string_from_key(self.sender))
-        print("Recipient: " + crypto_utils.get_string_from_key(self.recipient))
+        print("Sender: " + CryptoUtils.get_string_from_key(self.sender))
+        print("Recipient: " + CryptoUtils.get_string_from_key(self.recipient))
         print("Value: "+ str(self.value))
 
 
@@ -174,6 +157,7 @@ class Node(object):
 
 # HELPER FUNCTIONS!
 def parse_args():
+
     parser = argparse.ArgumentParser(description="Cryptomining simulation")
 
     parser.add_argument("-t", action="store", required=False, dest="TARGET_PORT",
@@ -192,13 +176,16 @@ def handle_transaction(client_socket, aChain):
 
     while True:
         data = client_socket.recv(4096)
+        if data == 'close':
+            break
+
         tx = pickle.loads(data)
         new_block = Block(time.time(), 0, [tx], aChain.get_last_block_hash())
 
-        if new_block.verifyTxs():
-            aChain.mineBlock(new_block)
+        if new_block.verify_txs():
+            aChain.mine_block(new_block)
             client_socket.send("[*] Successfully added a block with your transaction to the chain")
-            client_socket.send("[*] Block hash: {}".format(new_block.get_blockHash()))
+            client_socket.send("[*] Block hash: {}".format(new_block.block_hash))
             client_socket.send(pickle.dumps(aChain))
             print("[*] Block added to your chain")
             aChain.print_all()
@@ -219,7 +206,7 @@ if __name__ == "__main__":
         # MINER LOGIC
         chain = Chain()
         genesis_block = Block(time.time(), 0, [], "0")
-        chain.mineBlock(genesis_block)
+        chain.mine_block(genesis_block)
 
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind((HOST, int(PORT)))
@@ -229,7 +216,7 @@ if __name__ == "__main__":
         while True:
             client, addr = server.accept()
 
-            print("[*] got a transaction!")
+            print("[*] Received a transaction!")
             # our miner is a pretty decent one and he will always accept your transaction :D
 
             client_handler = threading.Thread(target=handle_transaction, args=(client, chain))
@@ -238,9 +225,9 @@ if __name__ == "__main__":
 
         # USER LOGIC
         chain = Chain()
-        sender = Node()
+        aSender = Node()
         while True:
-            recipient = Node()
+            aRecipient = Node()
             amount = input("[*] Input your transaction amount: ")
 
             try:
@@ -249,8 +236,8 @@ if __name__ == "__main__":
                 print("[*] Invalid value. Try again!")
                 continue
 
-            tx = Transaction(sender.public_key, recipient.public_key, 3)
-            tx.generate_signature(sender.private_key)
+            tx = Transaction(aSender.public_key, aRecipient.public_key, amount)
+            tx.generate_signature(aSender.private_key)
 
             miner = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             miner.connect((HOST, int(options.TARGET_PORT)))
@@ -260,7 +247,7 @@ if __name__ == "__main__":
             print(miner.recv(4096))
             new_chain = pickle.load(miner.makefile("r"))
 
-            if new_chain.isChainValid() and len(new_chain.blockchain) > len(chain.blockchain):
+            if new_chain.is_chain_valid() and len(new_chain.blockchain) > len(chain.blockchain):
                 print("[*] Chain is valid!")
                 chain = new_chain
                 chain.print_all()
