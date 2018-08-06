@@ -83,7 +83,7 @@ class Chain(object):
         self.difficulty = 5
 
     def mine_block(self, block):
-        while not block.block_hash.startswith('0'*5):
+        while not block.block_hash.startswith('0'*self.difficulty):
             block.nonce += 1
             block.timestamp = time.time()
             block.calculate_block_hash()
@@ -185,6 +185,7 @@ def handle_transaction(node, aChain):
             break
 
         if data == 'close':
+            nodes_socks.remove(node)
             break
         else:
             aTx = data
